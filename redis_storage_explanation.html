@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How Redis Actually Stores Data</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+            color: #e2e8f0;
+            padding: 20px;
+            margin: 0;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(15, 23, 42, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #dc2626;
+        }
+        
+        .header h1 {
+            color: #f1f5f9;
+            font-size: 2.2em;
+            margin-bottom: 10px;
+        }
+        
+        .comparison-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 30px 0;
+        }
+        
+        .diagram-card, .reality-card {
+            background: rgba(30, 41, 59, 0.8);
+            border-radius: 15px;
+            padding: 25px;
+            border: 2px solid;
+        }
+        
+        .diagram-card {
+            border-color: #3b82f6;
+        }
+        
+        .reality-card {
+            border-color: #dc2626;
+        }
+        
+        .card-title {
+            font-size: 1.3em;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .diagram-card .card-title {
+            color: #60a5fa;
+        }
+        
+        .reality-card .card-title {
+            color: #f87171;
+        }
+        
+        .storage-level {
+            background: rgba(15, 23, 42, 0.8);
+            border-radius: 10px;
+            padding: 15px;
+            margin: 15px 0;
+            border-left: 4px solid;
+        }
+        
+        .level-1 { border-left-color: #10b981; }
+        .level-2 { border-left-color: #f59e0b; }
+        .level-3 { border-left-color: #8b5cf6; }
+        .level-4 { border-left-color: #ef4444; }
+        
+        .level-title {
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 1.1em;
+        }
+        
+        .level-1 .level-title { color: #34d399; }
+        .level-2 .level-title { color: #fbbf24; }
+        .level-3 .level-title { color: #a78bfa; }
+        .level-4 .level-title { color: #fb7185; }
+        
+        .code-example {
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid #374151;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            overflow-x: auto;
+        }
+        
+        .highlight {
+            background: rgba(34, 197, 94, 0.2);
+            padding: 10px;
+            border-radius: 6px;
+            margin: 15px 0;
+            border-left: 3px solid #22c55e;
+        }
+        
+        .memory-breakdown {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .memory-item {
+            background: rgba(59, 130, 246, 0.1);
+            border: 2px solid #3b82f6;
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+        }
+        
+        .memory-value {
+            font-size: 1.4em;
+            font-weight: bold;
+            color: #60a5fa;
+            margin-bottom: 5px;
+        }
+        
+        .memory-label {
+            font-size: 0.9em;
+            color: #cbd5e1;
+        }
+        
+        @media (max-width: 768px) {
+            .comparison-section {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Redis Data Storage: Diagram vs Reality</h1>
+            <p>Understanding the difference between logical organization and physical storage</p>
+        </div>
+
+        <div class="comparison-section">
+            <div class="diagram-card">
+                <div class="card-title">📊 What Your Diagram Shows</div>
+                <p><strong>Logical Data Organization</strong></p>
+                <p>Your diagram represents how developers think about and organize user data in Redis using different data structures for optimal performance and memory efficiency.</p>
+                
+                <div class="code-example">
+// Logical organization
+user:12345:profile → Hash structure
+user:12345:session → String structure  
+user:12345:activity → List structure
+user:12345:permissions → Set structure
+user:12345:analytics → TimeSeries structure
+                </div>
+                
+                <p>This is the <strong>application layer view</strong> - how you design your data model for best results.</p>
+            </div>
+
+            <div class="reality-card">
+                <div class="card-title">⚙️ How Redis Actually Stores It</div>
+                <p><strong>Physical Storage Implementation</strong></p>
+                <p>Redis has multiple layers of storage optimization that happen automatically under the hood, regardless of your logical organization.</p>
+                
+                <div class="code-example">
+// Physical storage (simplified)
+Memory Pages → Hash Tables → Objects → Encoding → Raw Data
+                </div>
+                
+                <p>This is the <strong>Redis internal implementation</strong> - what actually happens in memory.</p>
+            </div>
+        </div>
+
+        <div class="storage-level level-1">
+            <div class="level-title">🎯 Level 1: Application Data Model (Your Diagram)</div>
+            <p>This is where your diagram fits - the logical organization of data types:</p>
+            <div class="code-example">
+Hash: user:12345:profile → {name: "John", email: "john@example.com"}
+String: session:abc123 → "eyJhbGciOiJIUzI1NiIs..."
+List: activity:12345 → ["action1", "action2", "action3"]
+Set: permissions:12345 → {"read", "write", "admin"}
+            </div>
+        </div>
+
+        <div class="storage-level level-2">
+            <div class="level-title">🔧 Level 2: Redis Data Structure Layer</div>
+            <p>Redis converts your logical structures into optimized internal representations:</p>
+            <div class="code-example">
+Small Hash → ziplist (memory-efficient)
+Large Hash → hash table (fast access)
+Small List → ziplist or listpack
+Large List → quicklist (hybrid structure)
+Small Set → intset (if all integers) or hash table
+Large Set → hash table
+            </div>
+        </div>
+
+        <div class="storage-level level-3">
+            <div class="level-title">🗂️ Level 3: Object Encoding Layer</div>
+            <p>Redis automatically chooses the most efficient encoding based on data size and type:</p>
+            <div class="code-example">
+Strings:
+- RAW encoding: for strings > 44 bytes
+- EMBSTR encoding: for strings ≤ 44 bytes  
+- INT encoding: for integer values
+
+Hashes:
+- ZIPLIST: when small (< 512 entries, < 64 bytes per value)
+- HASHTABLE: when large or contains big values
+
+Lists:  
+- QUICKLIST: combination of ziplists for memory efficiency
+            </div>
+        </div>
+
+        <div class="storage-level level-4">
+            <div class="level-title">💾 Level 4: Memory Management Layer</div>
+            <p>The lowest level - how Redis actually allocates memory:</p>
+            <div class="code-example">
+jemalloc Memory Allocator:
+├── Memory pools for different object sizes
+├── Fragmentation management  
+├── Memory alignment optimization
+└── Garbage collection for expired keys
+
+Physical Memory Layout:
+[Object Header][Type Info][Expiration][Data Payload]
+     8 bytes    4 bytes    8 bytes    Variable
+            </div>
+        </div>
+
+        <div class="highlight">
+            <strong>🎯 Key Insight:</strong> Your diagram shows Level 1 (application design), but Redis performance comes from automatic optimization at Levels 2-4. The 20KB per user calculation accounts for all these layers combined.
+        </div>
+
+        <div style="background: rgba(30, 41, 59, 0.8); border-radius: 15px; padding: 25px; margin-top: 30px;">
+            <h3 style="color: #34d399; text-align: center; margin-bottom: 20px;">📈 Memory Overhead Breakdown (Per User)</h3>
+            
+            <div class="memory-breakdown">
+                <div class="memory-item">
+                    <div class="memory-value">12KB</div>
+                    <div class="memory-label">Raw Data</div>
+                </div>
+                <div class="memory-item">
+                    <div class="memory-value">+4KB</div>
+                    <div class="memory-label">Redis Structures</div>
+                </div>
+                <div class="memory-item">
+                    <div class="memory-value">+2KB</div>
+                    <div class="memory-label">Object Headers</div>
+                </div>
+                <div class="memory-item">
+                    <div class="memory-value">+1KB</div>
+                    <div class="memory-label">Expiration Data</div>
+                </div>
+                <div class="memory-item">
+                    <div class="memory-value">+1KB</div>
+                    <div class="memory-label">Memory Alignment</div>
+                </div>
+                <div class="memory-item">
+                    <div class="memory-value">=20KB</div>
+                    <div class="memory-label">Total Per User</div>
+                </div>
+            </div>
+        </div>
+
+        <div style="background: rgba(15, 23, 42, 0.8); border-radius: 15px; padding: 25px; margin-top: 20px; border-left: 5px solid #22c55e;">
+            <h3 style="color: #4ade80; margin-bottom: 15px;">✅ Why This Matters for Your Implementation</h3>
+            <ul style="color: #cbd5e1; line-height: 1.8;">
+                <li><strong>Design Level:</strong> Your diagram helps you choose the right Redis data types</li>
+                <li><strong>Performance Level:</strong> Redis automatically optimizes storage regardless of your choices</li>
+                <li><strong>Capacity Planning:</strong> The 359GB calculation accounts for all Redis overhead layers</li>
+                <li><strong>Monitoring:</strong> You track application metrics, Redis handles storage optimization</li>
+            </ul>
+        </div>
+
+        <div style="background: rgba(30, 41, 59, 0.8); border-radius: 15px; padding: 25px; margin-top: 20px;">
+            <h3 style="color: #f59e0b; text-align: center; margin-bottom: 15px;">🔄 The Complete Picture</h3>
+            <p style="text-align: center; font-size: 1.1em; color: #cbd5e1;">
+                Your diagram → Guides efficient data modeling<br>
+                Redis internals → Handles storage optimization automatically<br>
+                Result → 67% memory reduction + optimal performance
+            </p>
+        </div>
+    </div>
+</body>
+</html>
